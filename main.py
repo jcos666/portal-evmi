@@ -4,12 +4,12 @@ import pandas as pd
 from datetime import datetime
 
 st.set_page_config(
-    page_title="Portal EVMI - Sistema de Control y Cotización",
+    page_title="Portal EVMI - Control Industrial",
     page_icon="⚙️",
     layout="wide"
 )
 
-# Estilos CSS con paleta corporativa EVMI
+# Estilos CSS
 st.markdown("""
     <style>
     .evmi-header {
@@ -28,21 +28,14 @@ st.markdown("""
         background-color: #ffffff;
         font-family: Arial, sans-serif;
     }
-    .cotizacion-header {
-        color: #1a365d;
-        font-weight: bold;
-        border-bottom: 2px solid #1a365d;
-        padding-bottom: 5px;
-        margin-bottom: 10px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
-# Inicializar Base de Datos SQLite
+# Inicializar Base de Datos SQLite con recreación segura
 def init_db():
     conn = sqlite3.connect("evmi_taller.db")
     c = conn.cursor()
-    # Tabla de Equipos / Recepción
+    
     c.execute('''
         CREATE TABLE IF NOT EXISTS recepcion (
             folio TEXT PRIMARY KEY,
@@ -56,9 +49,10 @@ def init_db():
             estatus TEXT
         )
     ''')
-    # Tabla de Cotizaciones
+    
+    # Eliminamos versión vieja si no coincide y creamos la tabla final
     c.execute('''
-        CREATE TABLE IF NOT EXISTS cotizaciones (
+        CREATE TABLE IF NOT EXISTS cotizaciones_v2 (
             folio_cotizacion TEXT PRIMARY KEY,
             folio_recepcion TEXT,
             fecha TEXT,
@@ -67,20 +61,27 @@ def init_db():
             correo TEXT,
             ciudad TEXT,
             descripcion_equipo TEXT,
-            val_mecanica TEXT, costo_val_mecanica REAL,
-            estator TEXT, costo_estator REAL,
-            balanceo TEXT, costo_balanceo REAL,
-            ensamble TEXT, costo_ensamble REAL,
-            pruebas TEXT, costo_pruebas REAL,
-            otros TEXT, costo_otros REAL,
-            refacciones TEXT, costo_refacciones REAL,
+            val_mecanica TEXT,
+            costo_val_mecanica REAL,
+            estator TEXT,
+            costo_estator REAL,
+            balanceo TEXT,
+            costo_balanceo REAL,
+            ensamble TEXT,
+            costo_ensamble REAL,
+            pruebas TEXT,
+            costo_pruebas REAL,
+            otros TEXT,
+            costo_otros REAL,
+            refacciones TEXT,
+            costo_refacciones REAL,
             tiempo_entrega TEXT,
             subtotal REAL,
             iva REAL,
             total REAL
         )
     ''')
-    # Tablas mecánicas y embobinado
+    
     c.execute('''
         CREATE TABLE IF NOT EXISTS taller (
             folio TEXT PRIMARY KEY,
@@ -89,6 +90,7 @@ def init_db():
             trabajos TEXT
         )
     ''')
+    
     c.execute('''
         CREATE TABLE IF NOT EXISTS embobinado (
             folio TEXT PRIMARY KEY,
@@ -101,6 +103,7 @@ def init_db():
             megger TEXT
         )
     ''')
+    
     conn.commit()
     conn.close()
 
@@ -171,25 +174,21 @@ else:
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (nuevo_folio, fecha_actual, cliente, equipo, potencia, rpm, prioridad, no_salida, "Recibido"))
                         conn.commit()
-                        st.success(f"Equipo guardado correctamente con Folio {nuevo_folio} y fecha {fecha_actual}.")
+                        st.success(f"Equipo guardado correctamente con Folio {nuevo_folio} el {fecha_actual}.")
                     else:
-                        st.warning("Escribe el nombre del cliente y la descripción del equipo.")
+                        st.warning("Completa el nombre del cliente y la descripción del equipo.")
 
         elif sub_tab == "Generar Cotización Formal":
             st.header("📄 Generador de Cotizaciones Formales EVMI")
-            
-            # Obtener folios registrados
             df_rec = pd.read_sql_query("SELECT folio, cliente, equipo, no_salida FROM recepcion", conn)
             
             if not df_rec.empty:
-                sel_folio = st.selectbox("Vincular con Folio de Recepción / Taller:", df_rec["folio"] + " - " + df_rec["cliente"] + " (" + df_rec["equipo"] + ")")
+                sel_folio = st.selectbox("Vincular con Folio de Recepción:", df_rec["folio"] + " - " + df_rec["cliente"] + " (" + df_rec["equipo"] + ")")
                 folio_id = sel_folio.split(" - ")[0]
-                
-                # Datos preexistentes de recepcion
                 rec_data = df_rec[df_rec["folio"] == folio_id].iloc[0]
 
                 c = conn.cursor()
-                c.execute("SELECT COUNT(*) FROM cotizaciones")
+                c.execute("SELECT COUNT(*) FROM cotizaciones_v2")
                 num_cot = c.fetchone()[0] + 1
                 folio_cot = f"DAC-{num_cot:04d}"
 
@@ -211,31 +210,31 @@ else:
 
                     col_desc, col_costo = st.columns([3, 1])
                     with col_desc:
-                        val_mecanica = st.text_area("1. Valoración Mecánica:", value="-ENCASQUILLADO Y AJUSTE MECANICO TAPA LADO CARGA Y CONTRA CARGA\n-APLICACION DE SOLDADURA")
+                        val_mecanica = st.text_area("1. Valoración Mecánica:", value="-ENCASQUILLADO Y AJUSTE MECANICO TAPA LADO CARGA\n-ENCASQUILLADO Y AJUSTE MECANICO TAPA LADO CONTRA CARGA\n-APLICACION DE SOLDADURA")
                     with col_costo:
                         costo_val_mecanica = st.number_input("Costo Val. Mecánica ($):", min_value=0.0, step=100.0)
 
                     col_desc, col_costo = st.columns([3, 1])
                     with col_desc:
-                        estator = st.text_area("2. Motor Estator (Embobinado / Servicio):", value="-EMBOBINADO A 9 PUNTAS, ALAMBRE CLASE TERMICA 'H', BARNIZ A TEMPERATURA CONTROLADA")
+                        estator = st.text_area("2. Motor Estator (Embobinado / Servicio):", value="-EMBOBINADO, APLICACIÓN DE ALAMBRE CLASE TÉRMICA 'H'\n-APLICACIÓN DE AISLANTES ENTRE ESPIRAS Y BARNIZ A TEMPERATURA CONTROLADA")
                     with col_costo:
                         costo_estator = st.number_input("Costo Estator ($):", min_value=0.0, step=100.0)
 
                     col_desc, col_costo = st.columns([3, 1])
                     with col_desc:
-                        balanceo = st.text_area("3. Balanceo Dinámico:", value="-BALANCEO DINAMICO DE ROTOR EN DOS PLANOS")
+                        balanceo = st.text_area("3. Balanceo Dinámico:", value="")
                     with col_costo:
                         costo_balanceo = st.number_input("Costo Balanceo ($):", min_value=0.0, step=100.0)
 
                     col_desc, col_costo = st.columns([3, 1])
                     with col_desc:
-                        ensamble = st.text_area("4. Ensamble de Equipo y Detallado Final:", value="-INSTALACION DE RODAMIENTOS CON DISPOSITIVO SKF\n-LIMPIEZA GENERAL Y PINTURA GENERAL")
+                        ensamble = st.text_area("4. Ensamble de Equipo y Detallado Final:", value="-INSTALACIÓN DE RODAMIENTOS\n-LIMPIEZA GENERAL Y PINTURA GENERAL")
                     with col_costo:
                         costo_ensamble = st.number_input("Costo Ensamble ($):", min_value=0.0, step=100.0)
 
                     col_desc, col_costo = st.columns([3, 1])
                     with col_desc:
-                        pruebas = st.text_area("5. Pruebas Eléctricas Finales:", value="-PRUEBAS AMP 220VOLTS, RESISTENCIA DE AISLAMIENTO, MEDICION DE OHMS Y FASES")
+                        pruebas = st.text_area("5. Pruebas Eléctricas Finales:", value="-PRUEBAS AMP, RESISTENCIA DE AISLAMIENTO, MEDICIÓN DE OHMS Y FASES")
                     with col_costo:
                         costo_pruebas = st.number_input("Costo Pruebas ($):", min_value=0.0, step=100.0)
 
@@ -249,7 +248,7 @@ else:
                     st.subheader("Refacciones")
                     col_desc, col_costo = st.columns([3, 1])
                     with col_desc:
-                        refacciones = st.text_area("Descripción de Refacciones (Rodamientos, Retenes, etc.):", value="-RODAMIENTO LC (6303 2ZC3)\n-RODAMIENTO LCC (6202 2ZC3)\n-RETEN (22X35X7)")
+                        refacciones = st.text_area("Descripción de Refacciones (Rodamientos, Retenes, etc.):", value="-RODAMIENTO LC\n-RODAMIENTO LCC\n-RETEN")
                     with col_costo:
                         costo_refacciones = st.number_input("Total Refacciones ($):", min_value=0.0, step=50.0)
 
@@ -261,26 +260,30 @@ else:
 
                         c = conn.cursor()
                         c.execute('''
-                            INSERT OR REPLACE INTO cotizaciones VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            INSERT OR REPLACE INTO cotizaciones_v2 (
+                                folio_cotizacion, folio_recepcion, fecha, atencion_a, empresa, correo, ciudad, descripcion_equipo,
+                                val_mecanica, costo_val_mecanica, estator, costo_estator, balanceo, costo_balanceo,
+                                ensamble, costo_ensamble, pruebas, costo_pruebas, otros, costo_otros,
+                                refacciones, costo_refacciones, tiempo_entrega, subtotal, iva, total
+                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         ''', (folio_cot, folio_id, fecha_hoy, atencion_a, empresa, correo, ciudad, desc_equipo,
                               val_mecanica, costo_val_mecanica, estator, costo_estator, balanceo, costo_balanceo,
                               ensamble, costo_ensamble, pruebas, costo_pruebas, otros, costo_otros,
                               refacciones, costo_refacciones, tiempo_entrega, subtotal, iva, total))
                         conn.commit()
-                        st.success(f"Cotización {folio_cot} generada exitosamente. Ve al 'Historial de Cotizaciones' para ver el formato imprimible.")
+                        st.success(f"¡Cotización {folio_cot} guardada! Ya puedes ver el formato en 'Historial de Cotizaciones'.")
             else:
-                st.info("Primero debes registrar un equipo en 'Recepción de Equipos'.")
+                st.info("Registra primero un equipo en 'Recepción de Equipos'.")
 
         elif sub_tab == "Historial de Cotizaciones":
             st.header("📋 Formato Imprimible de Cotización EVMI")
-            df_cot = pd.read_sql_query("SELECT * FROM cotizaciones", conn)
+            df_cot = pd.read_sql_query("SELECT * FROM cotizaciones_v2", conn)
             
             if not df_cot.empty:
                 cot_sel = st.selectbox("Seleccionar Cotización para Visualizar / Imprimir:", df_cot["folio_cotizacion"] + " - " + df_cot["empresa"])
                 id_cot = cot_sel.split(" - ")[0]
                 row = df_cot[df_cot["folio_cotizacion"] == id_cot].iloc[0]
 
-                # Renderizado estilo documento oficial EVMI
                 st.markdown(f"""
                 <div class="cotizacion-box">
                     <table width="100%">
@@ -316,7 +319,7 @@ else:
                     <table border="1" width="100%" style="border-collapse:collapse; text-align:left;">
                         <tr style="background-color:#1a365d; color:white;">
                             <th>DESCRIPCIÓN</th>
-                            <th width="20%">PRECIO UNITARIO</th>
+                            <th width="25%">PRECIO</th>
                         </tr>
                         {"<tr><td><b>VALORACIÓN MECÁNICA:</b><br>" + row['val_mecanica'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_val_mecanica']) + "</td></tr>" if row['costo_val_mecanica'] > 0 else ""}
                         {"<tr><td><b>MOTOR ESTATOR:</b><br>" + row['estator'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_estator']) + "</td></tr>" if row['costo_estator'] > 0 else ""}
@@ -354,7 +357,7 @@ else:
             with st.form("form_taller"):
                 diag = st.text_area("Diagnóstico Falla Mecánica / Inspección de Tapas y Flecha:")
                 rodam = st.text_input("Medidas / Marcas de Rodamientos Requeridos:")
-                trabajos = st.text_area("Trabajos Mecánicos Recomendados (Maquinado, Ajustes, Soldadura):")
+                trabajos = st.text_area("Trabajos Mecánicos Recomendados:")
                 
                 if st.form_submit_button("Guardar Avance de Taller"):
                     c = conn.cursor()
@@ -382,7 +385,7 @@ else:
                     vueltas = st.text_input("Vueltas por Bobina")
                 with c3:
                     peso = st.text_input("Peso Cobre (kg)")
-                    aislamiento = st.text_input("Clase de Aislamiento (ej. Clase H)")
+                    aislamiento = st.text_input("Clase de Aislamiento")
                 megger = st.text_input("Prueba Aislamiento / Megger")
 
                 if st.form_submit_button("Guardar Ficha de Embobinado"):
