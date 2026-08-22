@@ -31,7 +31,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Inicializar Base de Datos SQLite con recreación segura
+# Inicializar Base de Datos SQLite
 def init_db():
     conn = sqlite3.connect("evmi_taller.db")
     c = conn.cursor()
@@ -50,7 +50,6 @@ def init_db():
         )
     ''')
     
-    # Eliminamos versión vieja si no coincide y creamos la tabla final
     c.execute('''
         CREATE TABLE IF NOT EXISTS cotizaciones_v2 (
             folio_cotizacion TEXT PRIMARY KEY,
@@ -284,66 +283,26 @@ else:
                 id_cot = cot_sel.split(" - ")[0]
                 row = df_cot[df_cot["folio_cotizacion"] == id_cot].iloc[0]
 
-                st.markdown(f"""
-                <div class="cotizacion-box">
-                    <table width="100%">
-                        <tr>
-                            <td width="60%"><h2><b>EVMI</b></h2><p>Especialistas en Vibraciones y Montajes Industriales</p></td>
-                            <td width="40%" align="right">
-                                <p><b>Puebla, Pue. A {row['fecha']}</b><br>
-                                <b>Folio:</b> {row['folio_cotizacion']}<br>
-                                <b>Vigencia:</b> 30 días</p>
-                            </td>
-                        </tr>
-                    </table>
-                    <hr>
-                    <h3 style="text-align:center; color:#c00000;"><b>SERVICIO CORRECTIVO: {row['descripcion_equipo']}</b></h3>
-                    
-                    <table width="100%" style="background-color:#f2f2f2; padding:10px;">
-                        <tr>
-                            <td><b>ATENCIÓN:</b> {row['atencion_a']}</td>
-                            <td><b>CONTACTO EVMI:</b> serviciosindustriales.evmi@outlook.com</td>
-                        </tr>
-                        <tr>
-                            <td><b>EMPRESA:</b> {row['empresa']}</td>
-                            <td><b>TEL:</b> 22.29.20.62.30 / 22.12.20.07.48</td>
-                        </tr>
-                        <tr>
-                            <td><b>CORREO:</b> {row['correo']}</td>
-                            <td><b>CIUDAD:</b> {row['ciudad']}</td>
-                        </tr>
-                    </table>
-                    <br>
-                    <p>En atención a su solicitud, envío a usted la cotización correspondiente a los servicios de su interés:</p>
-                    
-                    <table border="1" width="100%" style="border-collapse:collapse; text-align:left;">
-                        <tr style="background-color:#1a365d; color:white;">
-                            <th>DESCRIPCIÓN</th>
-                            <th width="25%">PRECIO</th>
-                        </tr>
-                        {"<tr><td><b>VALORACIÓN MECÁNICA:</b><br>" + row['val_mecanica'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_val_mecanica']) + "</td></tr>" if row['costo_val_mecanica'] > 0 else ""}
-                        {"<tr><td><b>MOTOR ESTATOR:</b><br>" + row['estator'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_estator']) + "</td></tr>" if row['costo_estator'] > 0 else ""}
-                        {"<tr><td><b>BALANCEO DINÁMICO:</b><br>" + row['balanceo'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_balanceo']) + "</td></tr>" if row['costo_balanceo'] > 0 else ""}
-                        {"<tr><td><b>ENSAMBLE Y DETALLADO FINAL:</b><br>" + row['ensamble'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_ensamble']) + "</td></tr>" if row['costo_ensamble'] > 0 else ""}
-                        {"<tr><td><b>PRUEBAS ELÉCTRICAS FINALES:</b><br>" + row['pruebas'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_pruebas']) + "</td></tr>" if row['costo_pruebas'] > 0 else ""}
-                        {"<tr><td><b>OTROS SERVICIOS:</b><br>" + row['otros'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_otros']) + "</td></tr>" if row['costo_otros'] > 0 else ""}
-                        {"<tr><td><b>REFACCIONES:</b><br>" + row['refacciones'].replace('\n', '<br>') + "</td><td>$" + str(row['costo_refacciones']) + "</td></tr>" if row['costo_refacciones'] > 0 else ""}
-                    </table>
-                    <br>
-                    <table width="100%">
-                        <tr>
-                            <td width="60%"><b>TIEMPO DE ENTREGA:</b> {row['tiempo_entrega']}<br>RECOLECCIÓN Y ENTREGA DONDE EL USUARIO LO SOLICITE.</td>
-                            <td width="40%">
-                                <table width="100%" border="1" style="border-collapse:collapse;">
-                                    <tr><td><b>SUBTOTAL:</b></td><td>${row['subtotal']:,.2f}</td></tr>
-                                    <tr><td><b>IVA (16%):</b></td><td>${row['iva']:,.2f}</td></tr>
-                                    <tr style="background-color:#1a365d; color:white;"><td><b>TOTAL:</b></td><td><b>${row['total']:,.2f}</b></td></tr>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-                """, unsafe_allow_html=True)
+                # Construir HTML limpio sin saltos de línea para evitar problemas de renderizado
+                filas_servicios = ""
+                if row['costo_val_mecanica'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>VALORACIÓN MECÁNICA:</b><br>{row['val_mecanica'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_val_mecanica']:,.2f}</td></tr>"
+                if row['costo_estator'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>MOTOR ESTATOR:</b><br>{row['estator'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_estator']:,.2f}</td></tr>"
+                if row['costo_balanceo'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>BALANCEO DINÁMICO:</b><br>{row['balanceo'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_balanceo']:,.2f}</td></tr>"
+                if row['costo_ensamble'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>ENSAMBLE Y DETALLADO FINAL:</b><br>{row['ensamble'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_ensamble']:,.2f}</td></tr>"
+                if row['costo_pruebas'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>PRUEBAS ELÉCTRICAS FINALES:</b><br>{row['pruebas'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_pruebas']:,.2f}</td></tr>"
+                if row['costo_otros'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>OTROS SERVICIOS:</b><br>{row['otros'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_otros']:,.2f}</td></tr>"
+                if row['costo_refacciones'] > 0:
+                    filas_servicios += f"<tr><td style='padding:8px;'><b>REFACCIONES:</b><br>{row['refacciones'].replace('\n', '<br>')}</td><td style='padding:8px;'>${row['costo_refacciones']:,.2f}</td></tr>"
+
+                html_cotizacion = f"""<div class="cotizacion-box"><table width="100%"><tr><td width="60%"><h2><b>EVMI</b></h2><p>Especialistas en Vibraciones y Montajes Industriales</p></td><td width="40%" align="right"><p><b>Puebla, Pue. A {row['fecha']}</b><br><b>Folio:</b> {row['folio_cotizacion']}<br><b>Vigencia:</b> 30 días</p></td></tr></table><hr><h3 style="text-align:center; color:#c00000;"><b>SERVICIO CORRECTIVO: {row['descripcion_equipo']}</b></h3><table width="100%" style="background-color:#f2f2f2; padding:10px;"><tr><td><b>ATENCIÓN:</b> {row['atencion_a']}</td><td><b>CONTACTO EVMI:</b> serviciosindustriales.evmi@outlook.com</td></tr><tr><td><b>EMPRESA:</b> {row['empresa']}</td><td><b>TEL:</b> 22.29.20.62.30 / 22.12.20.07.48</td></tr><tr><td><b>CORREO:</b> {row['correo']}</td><td><b>CIUDAD:</b> {row['ciudad']}</td></tr></table><br><p>En atención a su solicitud, envío a usted la cotización correspondiente a los servicios de su interés:</p><table border="1" width="100%" style="border-collapse:collapse; text-align:left;"><tr style="background-color:#1a365d; color:white;"><th style="padding:8px;">DESCRIPCIÓN</th><th width="25%" style="padding:8px;">PRECIO</th></tr>{filas_servicios}</table><br><table width="100%"><tr><td width="55%"><b>TIEMPO DE ENTREGA:</b> {row['tiempo_entrega']}<br>RECOLECCIÓN Y ENTREGA DONDE EL USUARIO LO SOLICITE.</td><td width="45%"><table width="100%" border="1" style="border-collapse:collapse;"><tr style="padding:6px;"><td><b>SUBTOTAL:</b></td><td>${row['subtotal']:,.2f}</td></tr><tr style="padding:6px;"><td><b>IVA (16%):</b></td><td>${row['iva']:,.2f}</td></tr><tr style="background-color:#1a365d; color:white; padding:6px;"><td><b>TOTAL:</b></td><td><b>${row['total']:,.2f}</b></td></tr></table></td></tr></table></div>"""
+
+                st.markdown(html_cotizacion, unsafe_allow_html=True)
             else:
                 st.info("No hay cotizaciones registradas.")
 
