@@ -76,7 +76,6 @@ def guardar_reporte(datos):
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
     
-    # Obtener valores existentes para mantener historial de fechas y responsables
     c.execute("""
         SELECT fecha_recepcion, fecha_mecanica, fecha_embobinado, 
                resp_recepcion, resp_mecanica, resp_embobinado 
@@ -174,7 +173,7 @@ if menu == "Nuevo Reporte / Inspección":
     with st.form("form_reporte"):
         st.subheader("📌 Datos Generales del Equipo, Cliente y Control de Fechas")
         
-        folio_defecto = prev['folio'] if prev else (folio_input if folio_input else generar_folio_autoincremental())
+        folio_defecto = prev['folio'] if (prev and 'folio' in prev) else (folio_input if folio_input else generar_folio_autoincremental())
         
         c1, c2, c3 = st.columns([2, 2, 2])
         folio = c1.text_input("Folio (Auto-generado / Modificable) *", value=folio_defecto)
@@ -204,11 +203,13 @@ if menu == "Nuevo Reporte / Inspección":
             value=d_mec if (area == "Taller (Mecánica / Inspección)" or str_f_mec) else date.today(),
             disabled=(area == "Recepción / Oficina" and not str_f_mec)
         )
+        
+        has_resp_mec = prev.get('resp_mecanica') if prev else ""
         resp_mecanica = f_col2.text_input(
             "👤 Ingresó (Mecánico / Inspector)", 
-            value=prev.get('resp_mecanica', '') if prev else "",
+            value=has_resp_mec,
             placeholder="Ej: Juan Carlos",
-            disabled=(area == "Recepción / Oficina" and not prev.get('resp_mecanica'))
+            disabled=(area == "Recepción / Oficina" and not has_resp_mec)
         )
 
         # 3. EMBOBINADO
@@ -219,11 +220,13 @@ if menu == "Nuevo Reporte / Inspección":
             value=d_emb if (area == "Embobinado" or str_f_emb) else date.today(),
             disabled=(area != "Embobinado" and not str_f_emb)
         )
+        
+        has_resp_emb = prev.get('resp_embobinado') if prev else ""
         resp_embobinado = f_col3.text_input(
             "👤 Ingresó (Técnico Embobinador)", 
-            value=prev.get('resp_embobinado', '') if prev else "",
+            value=has_resp_emb,
             placeholder="Ej: Tte. Embobinado",
-            disabled=(area != "Embobinado" and not prev.get('resp_embobinado'))
+            disabled=(area != "Embobinado" and not has_resp_emb)
         )
 
         st.markdown("---")
