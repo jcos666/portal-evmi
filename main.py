@@ -25,7 +25,7 @@ COMPONENTES_EMBOBINADO = [
 ]
 
 # ==========================================
-# BASE DE DATOS (SQLITE)
+# BASE DE DATOS Y MIGRACIÓN SEGURO DE COLUMNAS
 # ==========================================
 def init_db():
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
@@ -57,6 +57,28 @@ def init_db():
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Verificación estricta de estructura existente
+    c.execute("PRAGMA table_info(reportes)")
+    columnas_existentes = [column[1] for column in c.fetchall()]
+    
+    columnas_requeridas = {
+        "num_salida": "TEXT",
+        "fecha_recepcion": "TEXT",
+        "fecha_mecanica": "TEXT",
+        "fecha_embobinado": "TEXT",
+        "resp_recepcion": "TEXT",
+        "resp_mecanica": "TEXT",
+        "resp_embobinado": "TEXT"
+    }
+    
+    for col_nombre, col_tipo in columnas_requeridas.items():
+        if col_nombre not in columnas_existentes:
+            try:
+                c.execute(f"ALTER TABLE reportes ADD COLUMN {col_nombre} {col_tipo}")
+            except sqlite3.OperationalError:
+                pass
+            
     conn.commit()
     conn.close()
 
@@ -76,20 +98,24 @@ def guardar_reporte(datos):
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
     
-    c.execute("""
-        SELECT fecha_recepcion, fecha_mecanica, fecha_embobinado, 
-               resp_recepcion, resp_mecanica, resp_embobinado 
-        FROM reportes WHERE folio = ? ORDER BY id DESC LIMIT 1
-    """, (datos.get('folio'),))
-    existente = c.fetchone()
+    existente = None
+    try:
+        c.execute("""
+            SELECT fecha_recepcion, fecha_mecanica, fecha_embobinado, 
+                   resp_recepcion, resp_mecanica, resp_embobinado 
+            FROM reportes WHERE folio = ? ORDER BY id DESC LIMIT 1
+        """, (datos.get('folio'),))
+        existente = c.fetchone()
+    except sqlite3.OperationalError:
+        pass
     
-    f_rec = datos.get('fecha_recepcion') or (existente[0] if existente else str(date.today()))
-    f_mec = datos.get('fecha_mecanica') or (existente[1] if existente else "")
-    f_emb = datos.get('fecha_embobinado') or (existente[2] if existente else "")
+    f_rec = datos.get('fecha_recepcion') or (existente[0] if existente and existente[0] else str(date.today()))
+    f_mec = datos.get('fecha_mecanica') or (existente[1] if existente and existente[1] else "")
+    f_emb = datos.get('fecha_embobinado') or (existente[2] if existente and existente[2] else "")
     
-    r_rec = datos.get('resp_recepcion') or (existente[3] if existente else "")
-    r_mec = datos.get('resp_mecanica') or (existente[4] if existente else "")
-    r_emb = datos.get('resp_embobinado') or (existente[5] if existente else "")
+    r_rec = datos.get('resp_recepcion') or (existente[3] if existente and existente[3] else "")
+    r_mec = datos.get('resp_mecanica') or (existente[4] if existente and existente[4] else "")
+    r_emb = datos.get('resp_embobinado') or (existente[5] if existente and existente[5] else "")
 
     c.execute('''
         INSERT INTO reportes (
@@ -113,21 +139,41 @@ def guardar_reporte(datos):
 def obtener_ultimo_reporte(folio):
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
+    
+    # Obtener nombres de columnas dinámicamente para mapear de forma segura
+    c.execute("PRAGMA table_info(reportes)")
+    cols = [col[1] for col in c.fetchall()]
+    
     c.execute("SELECT * FROM reportes WHERE folio = ? ORDER BY id DESC LIMIT 1", (folio,))
     row = c.fetchone()
     conn.close()
+    
     if row:
+        res = dict(zip(cols, row))
         return {
-            "id": row[0], "folio": row[1], "num_salida": row[2], "cliente": row[3],
-            "equipo": row[4], "marca": row[5], "modelo": row[6], "hp_kw": row[7],
-            "rpm": row[8], "voltaje": row[9], "amperaje": row[10], "observaciones": row[11],
-            "componentes_json": row[12], "area": row[13], "falla_reportada": row[14],
-            "trabajo_realizado": row[15], "fecha_recepcion": row[16],
-            "fecha_mecanica": row[17], "fecha_embobinado": row[18],
-            "resp_recepcion": row[19] if len(row) > 19 else "",
-            "resp_mecanica": row[20] if len(row) > 20 else "",
-            "resp_embobinado": row[21] if len(row) > 21 else "",
-            "fecha": row[22] if len(row) > 22 else ""
+            "id": res.get("id"),
+            "folio": res.get("folio", ""),
+            "num_salida": res.get("num_salida", ""),
+            "cliente": res.get("cliente", ""),
+            "equipo": res.get("equipo", ""),
+            "marca": res.get("marca", ""),
+            "modelo": res.get("modelo", ""),
+            "hp_kw": res.get("hp_kw", ""),
+            "rpm": res.get("rpm", ""),
+            "voltaje": res.get("voltaje", ""),
+            "amperaje": res.get("amperaje", ""),
+            "observaciones": res.get("observaciones", ""),
+            "componentes_json": res.get("componentes_json", "{}"),
+            "area": res.get("area", ""),
+            "falla_reportada": res.get("falla_reportada", ""),
+            "trabajo_realizado": res.get("trabajo_realizado", ""),
+            "fecha_recepcion": res.get("fecha_recepcion", ""),
+            "fecha_mecanica": res.get("fecha_mecanica", ""),
+            "fecha_embobinado": res.get("fecha_embobinado", ""),
+            "resp_recepcion": res.get("resp_recepcion", ""),
+            "resp_mecanica": res.get("resp_mecanica", ""),
+            "resp_embobinado": res.get("resp_embobinado", ""),
+            "fecha": res.get("fecha", "")
         }
     return None
 
@@ -173,7 +219,7 @@ if menu == "Nuevo Reporte / Inspección":
     with st.form("form_reporte"):
         st.subheader("📌 Datos Generales del Equipo, Cliente y Control de Fechas")
         
-        folio_defecto = prev['folio'] if (prev and 'folio' in prev) else (folio_input if folio_input else generar_folio_autoincremental())
+        folio_defecto = prev['folio'] if (prev and prev.get('folio')) else (folio_input if folio_input else generar_folio_autoincremental())
         
         c1, c2, c3 = st.columns([2, 2, 2])
         folio = c1.text_input("Folio (Auto-generado / Modificable) *", value=folio_defecto)
@@ -187,7 +233,11 @@ if menu == "Nuevo Reporte / Inspección":
         
         # 1. RECEPCIÓN / OFICINA
         str_f_rec = prev.get('fecha_recepcion') if (prev and prev.get('fecha_recepcion')) else str(date.today())
-        d_rec = datetime.strptime(str_f_rec, "%Y-%m-%d").date() if str_f_rec else date.today()
+        try:
+            d_rec = datetime.strptime(str_f_rec, "%Y-%m-%d").date() if str_f_rec else date.today()
+        except ValueError:
+            d_rec = date.today()
+            
         fecha_recepcion = f_col1.date_input("1. Fecha Recepción", value=d_rec)
         resp_recepcion = f_col1.text_input(
             "👤 Ingresó (Recepción/Oficina) *", 
@@ -197,7 +247,11 @@ if menu == "Nuevo Reporte / Inspección":
 
         # 2. TALLER / MECÁNICA
         str_f_mec = prev.get('fecha_mecanica') if (prev and prev.get('fecha_mecanica')) else (str(date.today()) if area == "Taller (Mecánica / Inspección)" else "")
-        d_mec = datetime.strptime(str_f_mec, "%Y-%m-%d").date() if str_f_mec else date.today()
+        try:
+            d_mec = datetime.strptime(str_f_mec, "%Y-%m-%d").date() if str_f_mec else date.today()
+        except ValueError:
+            d_mec = date.today()
+            
         fecha_mecanica = f_col2.date_input(
             "2. Fecha Valoración Mecánica", 
             value=d_mec if (area == "Taller (Mecánica / Inspección)" or str_f_mec) else date.today(),
@@ -214,7 +268,11 @@ if menu == "Nuevo Reporte / Inspección":
 
         # 3. EMBOBINADO
         str_f_emb = prev.get('fecha_embobinado') if (prev and prev.get('fecha_embobinado')) else (str(date.today()) if area == "Embobinado" else "")
-        d_emb = datetime.strptime(str_f_emb, "%Y-%m-%d").date() if str_f_emb else date.today()
+        try:
+            d_emb = datetime.strptime(str_f_emb, "%Y-%m-%d").date() if str_f_emb else date.today()
+        except ValueError:
+            d_emb = date.today()
+            
         fecha_embobinado = f_col3.date_input(
             "3. Fecha Embobinado", 
             value=d_emb if (area == "Embobinado" or str_f_emb) else date.today(),
@@ -250,7 +308,7 @@ if menu == "Nuevo Reporte / Inspección":
             st.markdown("---")
             st.subheader("🛠️ Inspección de Componentes y Daños (Taller)")
             
-            comp_prev = json.loads(prev['componentes_json']) if (prev is not None and prev.get('componentes_json')) else {}
+            comp_prev = json.loads(prev['componentes_json']) if (prev and prev.get('componentes_json')) else {}
             
             h_comp, h_trae, h_dano, h_med = st.columns([2.5, 2.2, 2.2, 3.1])
             h_comp.markdown("**COMPONENTE**")
@@ -305,7 +363,7 @@ if menu == "Nuevo Reporte / Inspección":
             st.markdown("---")
             st.subheader("⚡ Toma de Datos de Embobinado")
             
-            comp_prev = json.loads(prev['componentes_json']) if (prev is not None and prev.get('componentes_json')) else {}
+            comp_prev = json.loads(prev['componentes_json']) if (prev and prev.get('componentes_json')) else {}
             
             for item in COMPONENTES_EMBOBINADO:
                 val_prev = comp_prev.get(item, "")
@@ -351,38 +409,38 @@ elif menu == "Histórico de Reportes":
     st.header("📂 Histórico, Responsables y Tiempos de Atención")
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
-    c.execute("""
-        SELECT id, folio, num_salida, cliente, equipo, area, 
-               fecha_recepcion, fecha_mecanica, fecha_embobinado,
-               resp_recepcion, resp_mecanica, resp_embobinado
-        FROM reportes ORDER BY id DESC
-    """)
+    
+    c.execute("PRAGMA table_info(reportes)")
+    cols = [col[1] for col in c.fetchall()]
+    
+    c.execute("SELECT * FROM reportes ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
     
     if rows:
         tabla_datos = []
         for r in rows:
-            f_rec = r[6]
-            f_mec = r[7]
-            f_emb = r[8]
+            res = dict(zip(cols, r))
+            f_rec = res.get('fecha_recepcion', '')
+            f_mec = res.get('fecha_mecanica', '')
+            f_emb = res.get('fecha_embobinado', '')
             
             dias_recep_mecanica = calcular_dias(f_rec, f_mec)
             dias_mecanica_embobinado = calcular_dias(f_mec, f_emb)
             dias_totales = calcular_dias(f_rec, f_emb if f_emb else f_mec)
             
             tabla_datos.append({
-                "ID": r[0],
-                "Folio": r[1],
-                "No. Salida": r[2] if r[2] else "-",
-                "Cliente": r[3],
-                "Equipo": r[4],
+                "ID": res.get('id'),
+                "Folio": res.get('folio'),
+                "No. Salida": res.get('num_salida') if res.get('num_salida') else "-",
+                "Cliente": res.get('cliente'),
+                "Equipo": res.get('equipo'),
                 "F. Recepción": f_rec if f_rec else "-",
-                "Resp. Oficina": r[9] if r[9] else "-",
+                "Resp. Oficina": res.get('resp_recepcion') if res.get('resp_recepcion') else "-",
                 "F. Mecánica": f_mec if f_mec else "-",
-                "Resp. Mecánica": r[10] if r[10] else "-",
+                "Resp. Mecánica": res.get('resp_mecanica') if res.get('resp_mecanica') else "-",
                 "F. Embobinado": f_emb if f_emb else "-",
-                "Resp. Embobinado": r[11] if r[11] else "-",
+                "Resp. Embobinado": res.get('resp_embobinado') if res.get('resp_embobinado') else "-",
                 "Días a Mecánica": dias_recep_mecanica,
                 "Días a Embobinado": dias_mecanica_embobinado,
                 "Días Totales": dias_totales
