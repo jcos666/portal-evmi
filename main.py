@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import io
+import json
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -108,6 +109,7 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS reportes_tecnicos (
             folio_recepcion TEXT PRIMARY KEY,
+            fecha_reporte TEXT,
             tecnico TEXT,
             empresa TEXT,
             marca TEXT,
@@ -133,7 +135,6 @@ def init_db():
 
 init_db()
 
-# Componentes Estándar del Reporte Técnico
 LISTA_COMPONENTES = [
     "TOLVA", "VENTILADOR", "TAPA DE CONEXIÓN", "CAJA DE CONEXIÓN", "POLEA",
     "ENGRANE", "TURBINA", "CASQUILLO L.C.", "CASQUILLO L.C.C.", "FLECHA LC",
@@ -533,24 +534,31 @@ else:
 
         if sub_taller == "Llenar Reporte Técnico":
             st.header("📋 Llenado de Reporte Técnico de Taller")
-            df_rec = pd.read_sql_query("SELECT folio, cliente, equipo, potencia, rpm FROM recepcion", conn)
+            df_rec = pd.read_sql_query("SELECT * FROM recepcion", conn)
             
             if not df_rec.empty:
                 sel_folio = st.selectbox("Buscar Equipo por Folio de Recepción:", df_rec["folio"] + " - " + df_rec["cliente"] + " (" + df_rec["equipo"] + ")")
                 folio_id = sel_folio.split(" - ")[0]
                 rec_data = df_rec[df_rec["folio"] == folio_id].iloc[0]
 
-                # Cargar datos guardados previamente si existen
+                # Cargar cotización para extraer el Ingeniero/Contacto si existe
+                df_cot = pd.read_sql_query("SELECT atencion_a FROM cotizaciones_v3 WHERE folio_recepcion = ?", conn, params=(folio_id,))
+                contacto_ing = df_cot.iloc[0]['atencion_a'] if not df_cot.empty else "N/A"
+
+                # Cargar reporte previo si existe
                 df_rep_prev = pd.read_sql_query("SELECT * FROM reportes_tecnicos WHERE folio_recepcion = ?", conn, params=(folio_id,))
                 prev = df_rep_prev.iloc[0] if not df_rep_prev.empty else None
+
+                st.info(f"📌 **CLIENTE:** {rec_data['cliente']} | **INGENIERO / CONTACTO:** {contacto_ing} | **NO. SALIDA:** {rec_data['no_salida']} | **FECHA RECEPCIÓN:** {rec_data['fecha_registro']}")
 
                 with st.form("form_reporte_tecnico"):
                     st.subheader(f"Reporte Técnico para Folio: {folio_id}")
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
+                        fecha_reporte = st.text_input("Fecha de Elaboración de Reporte:", value=prev['fecha_reporte'] if prev is not None else datetime.now().strftime("%d/%m/%Y"))
                         tecnico = st.text_input("Técnico que Desarmó:", value=prev['tecnico'] if prev is not None else "")
-                        empresa = st.text_input("Empresa:", value=rec_data['cliente'])
+                        empresa = st.text_input("Empresa / Cliente:", value=rec_data['cliente'])
                         marca = st.text_input("Marca del Equipo:", value=prev['marca'] if prev is not None else "")
                     with c2:
                         ampers = st.text_input("Ampers:", value=prev['ampers'] if prev is not None else "")
@@ -568,21 +576,43 @@ else:
                     st.markdown("---")
                     st.subheader("🛠️ Inspección de Componentes y Daños")
                     
+                    # Decodificar JSON previo si existe
+                    comp_prev = json.loads(prev['componentes_json']) if (prev is not None and prev['componentes_json']) else {}
+
                     datos_comp = {}
-                    col_header = st.columns([2, 1, 1, 3])
-                    col_header[0].markdown("**COMPONENTE**")
-                    col_header[1].markdown("**TRAE**")
-                    col_header[2].markdown("**DAÑOS**")
-                    col_header[3].markdown("**MEDIDAS O EXTRAS**")
+                    
+                    # Encabezados de Tabla
+                    h_comp, h_t_si, h_t_no, h_d_si, h_d_no, h_med = st.columns([2.5, 0.8, 0.8, 0.8, 0.8, 3.5])
+                    h_comp.markdown("**COMPONENTE**")
+                    h_t_si.markdown("**TRAE SI**")
+                    h_t_no.markdown("**TRAE NO**")
+                    h_d_si.markdown("**DAÑO SI**")
+                    h_d_no.markdown("**DAÑO NO**")
+                    h_med.markdown("**MEDIDAS O EXTRAS**")
 
                     for item in LISTA_COMPONENTES:
-                        c_item, c_trae, c_danos, c_medidas = st.columns([2, 1, 1, 3])
-                        c_item.text(item)
-                        trae_val = c_trae.selectbox("", ["SI", "NO"], key=f"trae_{item}")
-                        dano_val = c_danos.selectbox("", ["NO", "SI"], key=f"dano_{item}")
-                        medida_val = c_medidas.text_input("", key=f"med_{item}", label_visibility="collapsed")
+                        item_prev = comp_prev.get(item, {})
                         
-                        datos_comp[item] = {"trae": trae_val, "danos": dano_val, "medidas": medida_val}
+                        col_item, col_t_si, col_t_no, col_d_si, col_d_no, col_med = st.columns([2.5, 0.8, 0.8, 0.8, 0.8, 3.5])
+                        
+                        col_item.write(f"**{item}**")
+                        
+                        # Casillas independientes SI / NO
+                        trae_si = col_t_si.checkbox("", value=item_prev.get("trae_si", True), key=f"t_si_{item}")
+                        trae_no = col_t_no.checkbox("", value=item_prev.get("trae_no", False), key=f"t_no_{item}")
+                        
+                        dano_si = col_d_si.checkbox("", value=item_prev.get("dano_si", False), key=f"d_si_{item}")
+                        dano_no = col_d_no.checkbox("", value=item_prev.get("dano_no", True), key=f"d_no_{item}")
+                        
+                        medida_val = col_med.text_input("", value=item_prev.get("medidas", ""), key=f"med_{item}", label_visibility="collapsed")
+                        
+                        datos_comp[item] = {
+                            "trae_si": trae_si,
+                            "trae_no": trae_no,
+                            "dano_si": dano_si,
+                            "dano_no": dano_no,
+                            "medidas": medida_val
+                        }
 
                     st.markdown("---")
                     observaciones = st.text_area("OBSERVACIONES:", value=prev['observaciones'] if prev is not None else "")
@@ -606,12 +636,11 @@ else:
                     out_ohms = cs4.text_input("Ohms 1-2-3-4 (Salida):", value=prev['out_ohms'] if prev is not None else "")
 
                     if st.form_submit_button("💾 Guardar Reporte Técnico"):
-                        import json
                         comp_json = json.dumps(datos_comp)
                         c = conn.cursor()
                         c.execute('''
-                            INSERT OR REPLACE INTO reportes_tecnicos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                        ''', (folio_id, tecnico, empresa, marca, ampers, fases, volts, rpm, kwhp, hz, tipo,
+                            INSERT OR REPLACE INTO reportes_tecnicos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        ''', (folio_id, fecha_reporte, tecnico, empresa, marca, ampers, fases, volts, rpm, kwhp, hz, tipo,
                               rod_lc, rod_lcc, no_serie, comp_json, observaciones, recomendaciones,
                               in_megohms, in_volts, in_ampers, in_ohms, out_megohms, out_volts, out_ampers, out_ohms))
                         c.execute("UPDATE recepcion SET estatus=? WHERE folio=?", ("Inspeccionado en Taller", folio_id))
@@ -621,24 +650,27 @@ else:
                 st.info("No hay equipos en recepción.")
 
         elif sub_taller == "Ver / Imprimir Reporte Formato Físico":
-            st.header("🖨️ Formato de Imprimiendo de Reporte Técnico")
+            st.header("🖨️ Formato de Impresión de Reporte Técnico")
             df_rep = pd.read_sql_query("SELECT folio_recepcion, empresa, tecnico FROM reportes_tecnicos", conn)
             
             if not df_rep.empty:
                 sel_rep = st.selectbox("Seleccionar Reporte a Mostrar/Imprimir:", df_rep["folio_recepcion"] + " - " + df_rep["empresa"])
                 folio_id = sel_rep.split(" - ")[0]
                 row = pd.read_sql_query("SELECT * FROM reportes_tecnicos WHERE folio_recepcion = ?", conn, params=(folio_id,)).iloc[0]
-                import json
+                
+                # Cargar datos de recepción para fechas y número de salida
+                rec_info = pd.read_sql_query("SELECT fecha_registro, no_salida FROM recepcion WHERE folio = ?", conn, params=(folio_id,)).iloc[0]
+                
                 comp_data = json.loads(row['componentes_json'])
 
-                # Generación de Tabla de Componentes HTML estilo hoja física
                 filas_comp = ""
                 for item in LISTA_COMPONENTES:
-                    info = comp_data.get(item, {"trae": "NO", "danos": "NO", "medidas": ""})
-                    t_si = "X" if info['trae'] == "SI" else ""
-                    t_no = "X" if info['trae'] == "NO" else ""
-                    d_si = "X" if info['danos'] == "SI" else ""
-                    d_no = "X" if info['danos'] == "NO" else ""
+                    info = comp_data.get(item, {})
+                    t_si = "X" if info.get('trae_si') else ""
+                    t_no = "X" if info.get('trae_no') else ""
+                    d_si = "X" if info.get('dano_si') else ""
+                    d_no = "X" if info.get('dano_no') else ""
+                    medidas = info.get('medidas', '')
                     
                     filas_comp += f"""
                     <tr>
@@ -647,13 +679,12 @@ else:
                         <td style='padding:2px; text-align:center; font-size:10px;'>{t_no}</td>
                         <td style='padding:2px; text-align:center; font-size:10px;'>{d_si}</td>
                         <td style='padding:2px; text-align:center; font-size:10px;'>{d_no}</td>
-                        <td style='padding:2px 5px; font-size:10px;'>{info['medidas']}</td>
+                        <td style='padding:2px 5px; font-size:10px;'>{medidas}</td>
                     </tr>
                     """
 
                 html_reporte = f"""
                 <div class="cotizacion-container" style="font-family: Arial, sans-serif; color: #000; padding: 15px;">
-                    <!-- Encabezado con Nombre de Laura Alejandra y RFC -->
                     <table width="100%" style="border-bottom: 2px solid #000; padding-bottom: 5px;">
                         <tr>
                             <td width="20%">
@@ -667,9 +698,11 @@ else:
                         </tr>
                     </table>
 
-                    <div style="text-align:center; font-size:11px; font-weight:bold; margin: 8px 0;">REPORTE TECNICO ({row['folio_recepcion']})</div>
+                    <div style="text-align:center; font-size:11px; font-weight:bold; margin: 8px 0;">
+                        REPORTE TECNICO ({row['folio_recepcion']}) &nbsp;|&nbsp; SALIDA NO: {rec_info['no_salida']}<br>
+                        <span style="font-weight:normal; font-size:9px;">FECHA RECEPCIÓN: {rec_info['fecha_registro']} &nbsp;|&nbsp; FECHA REPORTE: {row['fecha_reporte']}</span>
+                    </div>
 
-                    <!-- Datos Generales -->
                     <table width="100%" style="font-size:10px; border-collapse:collapse; margin-bottom:8px;">
                         <tr>
                             <td width="40%"><b>TECNICO QUE DESARMO:</b> {row['tecnico']}</td>
@@ -692,11 +725,10 @@ else:
                         </tr>
                     </table>
 
-                    <!-- Tabla Completa de Inspección -->
                     <table border="1" width="100%" style="border-collapse:collapse; border-color:#000; font-size:10px; margin-bottom:8px;">
                         <thead>
                             <tr style="background-color:#e2e8f0; text-align:center;">
-                                <th rowspan="2" width="28%">TRAE</th>
+                                <th rowspan="2" width="28%">COMPONENTE</th>
                                 <th colspan="2" width="16%">TRAE</th>
                                 <th colspan="2" width="16%">DAÑOS</th>
                                 <th rowspan="2" width="40%">MEDIDAS O EXTRAS</th>
@@ -713,14 +745,12 @@ else:
                         </tbody>
                     </table>
 
-                    <!-- Observaciones y Recomendaciones -->
                     <div style="font-size:10px; margin-bottom:4px;"><b>OBSERVACIONES:</b> {row['observaciones']}</div>
                     <div style="border-bottom: 1px solid #000; margin-bottom:8px;"></div>
                     
                     <div style="font-size:10px; margin-bottom:4px;"><b>RECOMENDACIONES:</b> {row['recomendaciones']}</div>
                     <div style="border-bottom: 1px solid #000; margin-bottom:12px;"></div>
 
-                    <!-- Valores Eléctricos -->
                     <div style="text-align:center; font-size:10px; font-weight:bold; margin-bottom:4px;">VALORES DE ENTRADA</div>
                     <table width="100%" style="font-size:9px; text-align:center; margin-bottom:8px;">
                         <tr>
