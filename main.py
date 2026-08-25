@@ -51,6 +51,9 @@ def init_db():
             fecha_recepcion TEXT,
             fecha_mecanica TEXT,
             fecha_embobinado TEXT,
+            resp_recepcion TEXT,
+            resp_mecanica TEXT,
+            resp_embobinado TEXT,
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -73,27 +76,37 @@ def guardar_reporte(datos):
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
     
-    # Verificar si el folio ya existe para actualizar fechas sin sobrescribir las previas
-    c.execute("SELECT fecha_recepcion, fecha_mecanica, fecha_embobinado FROM reportes WHERE folio = ? ORDER BY id DESC LIMIT 1", (datos.get('folio'),))
+    # Obtener valores existentes para mantener historial de fechas y responsables
+    c.execute("""
+        SELECT fecha_recepcion, fecha_mecanica, fecha_embobinado, 
+               resp_recepcion, resp_mecanica, resp_embobinado 
+        FROM reportes WHERE folio = ? ORDER BY id DESC LIMIT 1
+    """, (datos.get('folio'),))
     existente = c.fetchone()
     
     f_rec = datos.get('fecha_recepcion') or (existente[0] if existente else str(date.today()))
     f_mec = datos.get('fecha_mecanica') or (existente[1] if existente else "")
     f_emb = datos.get('fecha_embobinado') or (existente[2] if existente else "")
+    
+    r_rec = datos.get('resp_recepcion') or (existente[3] if existente else "")
+    r_mec = datos.get('resp_mecanica') or (existente[4] if existente else "")
+    r_emb = datos.get('resp_embobinado') or (existente[5] if existente else "")
 
     c.execute('''
         INSERT INTO reportes (
             folio, num_salida, cliente, equipo, marca, modelo, hp_kw, rpm, voltaje, amperaje,
             observaciones, componentes_json, area, falla_reportada, trabajo_realizado,
-            fecha_recepcion, fecha_mecanica, fecha_embobinado
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            fecha_recepcion, fecha_mecanica, fecha_embobinado,
+            resp_recepcion, resp_mecanica, resp_embobinado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         datos.get('folio'), datos.get('num_salida'), datos.get('cliente'), datos.get('equipo'),
         datos.get('marca'), datos.get('modelo'), datos.get('hp_kw'),
         datos.get('rpm'), datos.get('voltaje'), datos.get('amperaje'),
         datos.get('observaciones'), json.dumps(datos.get('componentes', {})),
         datos.get('area'), datos.get('falla_reportada'), datos.get('trabajo_realizado'),
-        f_rec, f_mec, f_emb
+        f_rec, f_mec, f_emb,
+        r_rec, r_mec, r_emb
     ))
     conn.commit()
     conn.close()
@@ -111,7 +124,11 @@ def obtener_ultimo_reporte(folio):
             "rpm": row[8], "voltaje": row[9], "amperaje": row[10], "observaciones": row[11],
             "componentes_json": row[12], "area": row[13], "falla_reportada": row[14],
             "trabajo_realizado": row[15], "fecha_recepcion": row[16],
-            "fecha_mecanica": row[17], "fecha_embobinado": row[18], "fecha": row[19]
+            "fecha_mecanica": row[17], "fecha_embobinado": row[18],
+            "resp_recepcion": row[19] if len(row) > 19 else "",
+            "resp_mecanica": row[20] if len(row) > 20 else "",
+            "resp_embobinado": row[21] if len(row) > 21 else "",
+            "fecha": row[22] if len(row) > 22 else ""
         }
     return None
 
@@ -157,7 +174,6 @@ if menu == "Nuevo Reporte / Inspección":
     with st.form("form_reporte"):
         st.subheader("📌 Datos Generales del Equipo, Cliente y Control de Fechas")
         
-        # Generación o recuperación de folio y número de salida
         folio_defecto = prev['folio'] if prev else (folio_input if folio_input else generar_folio_autoincremental())
         
         c1, c2, c3 = st.columns([2, 2, 2])
@@ -165,16 +181,22 @@ if menu == "Nuevo Reporte / Inspección":
         num_salida = c2.text_input("Número de Salida / Remisión", value=prev['num_salida'] if (prev and prev.get('num_salida')) else "")
         cliente = c3.text_input("Cliente *", value=prev['cliente'] if prev else "")
         
-        # Bloque de fechas
-        st.markdown("**📅 Control de Fechas por Etapa**")
+        # Bloque de Fechas y Responsables por Área
+        st.markdown("**📅 Control de Fechas y Responsables de Registro**")
+        
         f_col1, f_col2, f_col3 = st.columns(3)
         
-        # Fecha Recepción
+        # 1. RECEPCIÓN / OFICINA
         str_f_rec = prev.get('fecha_recepcion') if (prev and prev.get('fecha_recepcion')) else str(date.today())
         d_rec = datetime.strptime(str_f_rec, "%Y-%m-%d").date() if str_f_rec else date.today()
-        fecha_recepcion = f_col1.date_input("1. Fecha Recepción / Entrada", value=d_rec)
+        fecha_recepcion = f_col1.date_input("1. Fecha Recepción", value=d_rec)
+        resp_recepcion = f_col1.text_input(
+            "👤 Ingresó (Recepción/Oficina) *", 
+            value=prev.get('resp_recepcion', '') if prev else "",
+            placeholder="Ej: Laura Ojeda"
+        )
 
-        # Fecha Valoración Mecánica
+        # 2. TALLER / MECÁNICA
         str_f_mec = prev.get('fecha_mecanica') if (prev and prev.get('fecha_mecanica')) else (str(date.today()) if area == "Taller (Mecánica / Inspección)" else "")
         d_mec = datetime.strptime(str_f_mec, "%Y-%m-%d").date() if str_f_mec else date.today()
         fecha_mecanica = f_col2.date_input(
@@ -182,14 +204,26 @@ if menu == "Nuevo Reporte / Inspección":
             value=d_mec if (area == "Taller (Mecánica / Inspección)" or str_f_mec) else date.today(),
             disabled=(area == "Recepción / Oficina" and not str_f_mec)
         )
+        resp_mecanica = f_col2.text_input(
+            "👤 Ingresó (Mecánico / Inspector)", 
+            value=prev.get('resp_mecanica', '') if prev else "",
+            placeholder="Ej: Juan Carlos",
+            disabled=(area == "Recepción / Oficina" and not prev.get('resp_mecanica'))
+        )
 
-        # Fecha Embobinado
+        # 3. EMBOBINADO
         str_f_emb = prev.get('fecha_embobinado') if (prev and prev.get('fecha_embobinado')) else (str(date.today()) if area == "Embobinado" else "")
         d_emb = datetime.strptime(str_f_emb, "%Y-%m-%d").date() if str_f_emb else date.today()
         fecha_embobinado = f_col3.date_input(
-            "3. Fecha Finalización Embobinado", 
+            "3. Fecha Embobinado", 
             value=d_emb if (area == "Embobinado" or str_f_emb) else date.today(),
             disabled=(area != "Embobinado" and not str_f_emb)
+        )
+        resp_embobinado = f_col3.text_input(
+            "👤 Ingresó (Técnico Embobinador)", 
+            value=prev.get('resp_embobinado', '') if prev else "",
+            placeholder="Ej: Tte. Embobinado",
+            disabled=(area != "Embobinado" and not prev.get('resp_embobinado'))
         )
 
         st.markdown("---")
@@ -302,16 +336,24 @@ if menu == "Nuevo Reporte / Inspección":
                     "trabajo_realizado": trabajo_realizado,
                     "fecha_recepcion": str(fecha_recepcion),
                     "fecha_mecanica": str(fecha_mecanica) if (area == "Taller (Mecánica / Inspección)" or str_f_mec) else "",
-                    "fecha_embobinado": str(fecha_embobinado) if (area == "Embobinado" or str_f_emb) else ""
+                    "fecha_embobinado": str(fecha_embobinado) if (area == "Embobinado" or str_f_emb) else "",
+                    "resp_recepcion": resp_recepcion if area == "Recepción / Oficina" or resp_recepcion else (prev.get('resp_recepcion', '') if prev else ""),
+                    "resp_mecanica": resp_mecanica if area == "Taller (Mecánica / Inspección)" or resp_mecanica else (prev.get('resp_mecanica', '') if prev else ""),
+                    "resp_embobinado": resp_embobinado if area == "Embobinado" or resp_embobinado else (prev.get('resp_embobinado', '') if prev else "")
                 }
                 guardar_reporte(payload)
                 st.success(f"✅ ¡Reporte guardado exitosamente con Folio {folio}!")
 
 elif menu == "Histórico de Reportes":
-    st.header("📂 Histórico y Tiempos de Atención")
+    st.header("📂 Histórico, Responsables y Tiempos de Atención")
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
-    c.execute("SELECT id, folio, num_salida, cliente, equipo, area, fecha_recepcion, fecha_mecanica, fecha_embobinado FROM reportes ORDER BY id DESC")
+    c.execute("""
+        SELECT id, folio, num_salida, cliente, equipo, area, 
+               fecha_recepcion, fecha_mecanica, fecha_embobinado,
+               resp_recepcion, resp_mecanica, resp_embobinado
+        FROM reportes ORDER BY id DESC
+    """)
     rows = c.fetchall()
     conn.close()
     
@@ -332,13 +374,15 @@ elif menu == "Histórico de Reportes":
                 "No. Salida": r[2] if r[2] else "-",
                 "Cliente": r[3],
                 "Equipo": r[4],
-                "Última Área": r[5],
                 "F. Recepción": f_rec if f_rec else "-",
-                "F. Valoración Mecánica": f_mec if f_mec else "-",
+                "Resp. Oficina": r[9] if r[9] else "-",
+                "F. Mecánica": f_mec if f_mec else "-",
+                "Resp. Mecánica": r[10] if r[10] else "-",
                 "F. Embobinado": f_emb if f_emb else "-",
+                "Resp. Embobinado": r[11] if r[11] else "-",
                 "Días a Mecánica": dias_recep_mecanica,
                 "Días a Embobinado": dias_mecanica_embobinado,
-                "Días Totales Acumulados": dias_totales
+                "Días Totales": dias_totales
             })
             
         st.dataframe(tabla_datos, use_container_width=True)
