@@ -4,13 +4,38 @@ import json
 from datetime import datetime, date
 
 # ==========================================
-# CONFIGURACIÓN DE PÁGINA
+# CONFIGURACIÓN DE PÁGINA Y ESTILOS CSS
 # ==========================================
 st.set_page_config(
     page_title="Portal EVMI - Control Industrial",
     page_icon="⚙️",
     layout="wide"
 )
+
+# Estilos CSS inyectados para colorear directamente las opciones seleccionadas
+st.markdown("""
+<style>
+    /* Estilo para casillas TRAE */
+    .trae-col div[role="radiogroup"] label:has(input[value="SI"]:checked) div[aria-checked="true"] {
+        background-color: #28a745 !important;
+        border-color: #28a745 !important;
+    }
+    .trae-col div[role="radiogroup"] label:has(input[value="NO"]:checked) div[aria-checked="true"] {
+        background-color: #dc3545 !important;
+        border-color: #dc3545 !important;
+    }
+
+    /* Estilo para casillas DAÑO */
+    .dano-col div[role="radiogroup"] label:has(input[value="SI"]:checked) div[aria-checked="true"] {
+        background-color: #dc3545 !important;
+        border-color: #dc3545 !important;
+    }
+    .dano-col div[role="radiogroup"] label:has(input[value="NO"]:checked) div[aria-checked="true"] {
+        background-color: #28a745 !important;
+        border-color: #28a745 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Listas de componentes según el área
 COMPONENTES_TALLER = [
@@ -301,7 +326,7 @@ if menu == "Nuevo Reporte / Inspección":
 
         datos_comp = {}
         
-        # --- SECCIÓN TALLER CON COLORES PERSONALIZADOS ---
+        # --- SECCIÓN TALLER CON COLORES DIRECTOS EN LOS SELECCIONADORES ---
         if area == "Taller (Mecánica / Inspección)":
             st.markdown("---")
             st.subheader("🛠️ Inspección de Componentes y Daños (Taller)")
@@ -320,38 +345,34 @@ if menu == "Nuevo Reporte / Inspección":
                 col_item, col_trae, col_dano, col_med = st.columns([2.5, 2.2, 2.2, 3.1])
                 col_item.write(f"**{item}**")
                 
-                idx_trae = 0 if item_prev.get("trae_si") else (1 if item_prev.get("trae_no") else 0)
-                idx_dano = 0 if item_prev.get("dano_si") else (1 if item_prev.get("dano_no") else 1)
+                idx_trae = 0 if item_prev.get("trae_si") else (1 if item_prev.get("trae_no") else None)
+                idx_dano = 0 if item_prev.get("dano_si") else (1 if item_prev.get("dano_no") else None)
 
-                trae_val = col_trae.radio(
-                    f"lbl_t_{item}",
-                    options=["SI", "NO"],
-                    index=idx_trae,
-                    key=f"rk_t_{item}",
-                    horizontal=True,
-                    label_visibility="collapsed"
-                )
+                # TRAE: SI = Verde | NO = Rojo
+                with col_trae.container():
+                    st.markdown('<div class="trae-col">', unsafe_allow_html=True)
+                    trae_val = st.radio(
+                        f"lbl_t_{item}",
+                        options=["SI", "NO"],
+                        index=idx_trae,
+                        key=f"rk_t_{item}",
+                        horizontal=True,
+                        label_visibility="collapsed"
+                    )
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Indicador de color para TRAE (SI = Verde | NO = Rojo)
-                if trae_val == "SI":
-                    col_trae.success("🟢 TRAE: SI")
-                else:
-                    col_trae.error("🔴 TRAE: NO")
-
-                dano_val = col_dano.radio(
-                    f"lbl_d_{item}",
-                    options=["SI", "NO"],
-                    index=idx_dano,
-                    key=f"rk_d_{item}",
-                    horizontal=True,
-                    label_visibility="collapsed"
-                )
-                
-                # Indicador de color para DAÑO (SI = Rojo | NO = Verde)
-                if dano_val == "SI":
-                    col_dano.error("🔴 DAÑO: SI")
-                else:
-                    col_dano.success("🟢 DAÑO: NO")
+                # DAÑO: SI = Rojo | NO = Verde
+                with col_dano.container():
+                    st.markdown('<div class="dano-col">', unsafe_allow_html=True)
+                    dano_val = st.radio(
+                        f"lbl_d_{item}",
+                        options=["SI", "NO"],
+                        index=idx_dano,
+                        key=f"rk_d_{item}",
+                        horizontal=True,
+                        label_visibility="collapsed"
+                    )
+                    st.markdown('</div>', unsafe_allow_html=True)
 
                 medida_val = col_med.text_input(
                     "", 
