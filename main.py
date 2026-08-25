@@ -58,7 +58,6 @@ def init_db():
         )
     ''')
     
-    # Verificación estricta de estructura existente
     c.execute("PRAGMA table_info(reportes)")
     columnas_existentes = [column[1] for column in c.fetchall()]
     
@@ -140,7 +139,6 @@ def obtener_ultimo_reporte(folio):
     conn = sqlite3.connect("evmi_control.db", check_same_thread=False)
     c = conn.cursor()
     
-    # Obtener nombres de columnas dinámicamente para mapear de forma segura
     c.execute("PRAGMA table_info(reportes)")
     cols = [col[1] for col in c.fetchall()]
     
@@ -303,7 +301,7 @@ if menu == "Nuevo Reporte / Inspección":
 
         datos_comp = {}
         
-        # --- SECCIÓN TALLER ---
+        # --- SECCIÓN TALLER CON COLORES PERSONALIZADOS ---
         if area == "Taller (Mecánica / Inspección)":
             st.markdown("---")
             st.subheader("🛠️ Inspección de Componentes y Daños (Taller)")
@@ -312,8 +310,8 @@ if menu == "Nuevo Reporte / Inspección":
             
             h_comp, h_trae, h_dano, h_med = st.columns([2.5, 2.2, 2.2, 3.1])
             h_comp.markdown("**COMPONENTE**")
-            h_trae.markdown("**TRAE (SI / NO)**")
-            h_dano.markdown("**DAÑO (SI / NO)**")
+            h_trae.markdown("**TRAE**")
+            h_dano.markdown("**DAÑO**")
             h_med.markdown("**MEDIDAS O EXTRAS**")
 
             for item in COMPONENTES_TALLER:
@@ -322,8 +320,8 @@ if menu == "Nuevo Reporte / Inspección":
                 col_item, col_trae, col_dano, col_med = st.columns([2.5, 2.2, 2.2, 3.1])
                 col_item.write(f"**{item}**")
                 
-                idx_trae = 0 if item_prev.get("trae_si") else (1 if item_prev.get("trae_no") else None)
-                idx_dano = 0 if item_prev.get("dano_si") else (1 if item_prev.get("dano_no") else None)
+                idx_trae = 0 if item_prev.get("trae_si") else (1 if item_prev.get("trae_no") else 0)
+                idx_dano = 0 if item_prev.get("dano_si") else (1 if item_prev.get("dano_no") else 1)
 
                 trae_val = col_trae.radio(
                     f"lbl_t_{item}",
@@ -334,6 +332,12 @@ if menu == "Nuevo Reporte / Inspección":
                     label_visibility="collapsed"
                 )
                 
+                # Indicador de color para TRAE (SI = Verde | NO = Rojo)
+                if trae_val == "SI":
+                    col_trae.success("🟢 TRAE: SI")
+                else:
+                    col_trae.error("🔴 TRAE: NO")
+
                 dano_val = col_dano.radio(
                     f"lbl_d_{item}",
                     options=["SI", "NO"],
@@ -343,6 +347,12 @@ if menu == "Nuevo Reporte / Inspección":
                     label_visibility="collapsed"
                 )
                 
+                # Indicador de color para DAÑO (SI = Rojo | NO = Verde)
+                if dano_val == "SI":
+                    col_dano.error("🔴 DAÑO: SI")
+                else:
+                    col_dano.success("🟢 DAÑO: NO")
+
                 medida_val = col_med.text_input(
                     "", 
                     value=item_prev.get("medidas", ""), 
