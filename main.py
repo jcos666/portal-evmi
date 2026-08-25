@@ -12,11 +12,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# Lista general de componentes para el taller
-LISTA_COMPONENTES = [
+# Listas de componentes según el área
+COMPONENTES_TALLER = [
     "CHAVETA", "CAJA DE CONEXIONES", "VENTILADOR", "CUBIERTA VENTILADOR",
     "TAPA LC", "TAPA LCC", "EMBOBINADO", "ROTOR / FLECHA", "CAPACITOR",
     "INTERRUPTOR CENTRÍFUGO", "PLATINAS", "CAJA DE TRANSMISIÓN / ENGRANES"
+]
+
+COMPONENTES_EMBOBINADO = [
+    "DIÁMETRO DE NÚCLEO", "LARGO DE NÚCLEO", "NÚMERO DE RANURAS", "PASO DE BOBINA",
+    "CALIBRE DE ALAMBRE", "NÚMERO DE HILOS", "CONEXIÓN (ESTRELLA / DELTA)", "ESPIRAS POR RANURA"
 ]
 
 # ==========================================
@@ -96,7 +101,7 @@ if menu == "Nuevo Reporte / Inspección":
     st.header("📋 Registro de Servicio Técnico")
     
     col_f1, col_f2 = st.columns([2, 1])
-    folio_input = col_f1.text_input("Ingrese Folio / No. Orden (opcional para cargar datos previa recepción):")
+    folio_input = col_f1.text_input("Ingrese Folio / No. Orden para buscar o actualizar:")
     
     prev = None
     if folio_input:
@@ -106,7 +111,12 @@ if menu == "Nuevo Reporte / Inspección":
         else:
             st.caption("No se encontraron registros previos con este folio. Se creará uno nuevo.")
 
-    area = st.radio("Área que diligencia:", ["Recepción / Administración", "Taller"], horizontal=True)
+    # Selección de Área de Trabajo
+    area = st.radio(
+        "Área que diligencia el formato:", 
+        ["Recepción / Oficina", "Taller (Mecánica / Inspección)", "Embobinado"], 
+        horizontal=True
+    )
 
     with st.form("form_reporte"):
         st.subheader("📌 Datos Generales del Equipo y Cliente")
@@ -130,26 +140,26 @@ if menu == "Nuevo Reporte / Inspección":
 
         datos_comp = {}
         
-        if area == "Taller":
+        # --- SECCIÓN TALLER ---
+        if area == "Taller (Mecánica / Inspección)":
             st.markdown("---")
             st.subheader("🛠️ Inspección de Componentes y Daños (Taller)")
             
             comp_prev = json.loads(prev['componentes_json']) if (prev is not None and prev.get('componentes_json')) else {}
             
-            # Encabezados
             h_comp, h_trae, h_dano, h_med = st.columns([2.5, 2.2, 2.2, 3.1])
             h_comp.markdown("**COMPONENTE**")
             h_trae.markdown("**TRAE (SI / NO)**")
             h_dano.markdown("**DAÑO (SI / NO)**")
             h_med.markdown("**MEDIDAS O EXTRAS**")
 
-            for item in LISTA_COMPONENTES:
+            for item in COMPONENTES_TALLER:
                 item_prev = comp_prev.get(item, {})
                 
                 col_item, col_trae, col_dano, col_med = st.columns([2.5, 2.2, 2.2, 3.1])
                 col_item.write(f"**{item}**")
                 
-                # Para iniciar desmarcado por defecto (index=None)
+                # Inicia sin selección (index=None) para marcar a 1 solo clic
                 idx_trae = 0 if item_prev.get("trae_si") else (1 if item_prev.get("trae_no") else None)
                 idx_dano = 0 if item_prev.get("dano_si") else (1 if item_prev.get("dano_no") else None)
 
@@ -186,8 +196,19 @@ if menu == "Nuevo Reporte / Inspección":
                     "medidas": medida_val
                 }
 
+        # --- SECCIÓN EMBOBINADO ---
+        elif area == "Embobinado":
+            st.markdown("---")
+            st.subheader("⚡ Datos de Embobinado y Tomade Datos")
+            
+            comp_prev = json.loads(prev['componentes_json']) if (prev is not None and prev.get('componentes_json')) else {}
+            
+            for item in COMPONENTES_EMBOBINADO:
+                val_prev = comp_prev.get(item, "")
+                datos_comp[item] = st.text_input(f"**{item}**", value=val_prev, key=f"emb_{item}")
+
         st.markdown("---")
-        trabajo_realizado = st.text_area("Diagnóstico / Trabajo a Realizar / Realizado", value=prev['trabajo_realizado'] if prev else "")
+        trabajo_realizado = st.text_area("Diagnóstico / Trabajo Realizado", value=prev['trabajo_realizado'] if prev else "")
         observaciones = st.text_area("Observaciones Adicionales", value=prev['observaciones'] if prev else "")
 
         submitted = st.form_submit_button("💾 Guardar Reporte")
@@ -207,13 +228,13 @@ if menu == "Nuevo Reporte / Inspección":
                     "voltaje": voltaje,
                     "amperaje": amperaje,
                     "observaciones": observaciones,
-                    "componentes": datos_comp if area == "Taller" else json.loads(prev['componentes_json']) if (prev and prev.get('componentes_json')) else {},
+                    "componentes": datos_comp if area != "Recepción / Oficina" else (json.loads(prev['componentes_json']) if (prev and prev.get('componentes_json')) else {}),
                     "area": area,
                     "falla_reportada": falla_reportada,
                     "trabajo_realizado": trabajo_realizado
                 }
                 guardar_reporte(payload)
-                st.success(f"✅ ¡Reporte guardado exitosamente para el folio {folio}!")
+                st.success(f"✅ ¡Reporte guardado exitosamente bajo la sección {area}!")
 
 elif menu == "Histórico de Reportes":
     st.header("📂 Histórico de Reportes Registrados")
